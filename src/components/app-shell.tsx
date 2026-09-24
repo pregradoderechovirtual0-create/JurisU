@@ -16,6 +16,7 @@ import { ROLE_LABELS } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { useEffect } from "react";
 
 const NAV = [
   { href: "/panel", label: "Panel", icon: LayoutDashboard },
@@ -40,10 +41,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
+useEffect(() => {
   if (!session) {
     router.replace("/");
-    return null;
   }
+}, [session, router]);
+
+if (!session) {
+  return null;
+}
 
   const initials = session.name
     .split(" ")
