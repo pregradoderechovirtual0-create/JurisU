@@ -1,5 +1,7 @@
 "use client";
 
+
+
 import {
   createContext,
   useCallback,
@@ -10,6 +12,15 @@ import {
   type ReactNode,
 } from "react";
 import { classifyCase, nextFolio } from "./classify";
+
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
+
+import { getFirebaseAuth } from "./firebase";
+
 import {
   CATEGORIES,
   SEED_APPOINTMENTS,
@@ -48,8 +59,10 @@ interface AppContextValue {
   appointments: Appointment[];
   users: User[];
   categories: typeof CATEGORIES;
-  login: (userId: string) => void;
-  logout: () => void;
+login: (
+  email: string,
+  password: string
+) => Promise<void>;  logout: () => void;
   createCase: (input: CreateCaseInput) => LegalCase;
   validateCase: (
     caseId: string,
@@ -93,12 +106,46 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<SessionUser | null>(null);
 
   useEffect(() => {
-    const state = loadState();
-    setCases(state.cases);
-    setAppointments(state.appointments);
-    setSession(state.session);
-    setReady(true);
-  }, []);
+
+  const state = loadState();
+
+  setCases(state.cases);
+  setAppointments(state.appointments);
+
+
+  const auth = getFirebaseAuth();
+
+
+  const unsubscribe = onAuthStateChanged(
+    auth,
+    (user)=>{
+
+      if(user){
+
+        setSession({
+          id:user.uid,
+          name:user.displayName || "Usuario",
+          email:user.email || "",
+          role:"consultante",
+        });
+
+      }else{
+
+        setSession(null);
+
+      }
+
+
+      setReady(true);
+
+    }
+  );
+
+
+  return ()=>unsubscribe();
+
+
+}, []);
 
   useEffect(() => {
     if (!ready) return;
@@ -106,43 +153,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }, [ready, cases, appointments, session]);
 
-  const login = useCallback((userId: string) => {
-    const user = USERS.find((u) => u.id === userId);
-    if (!user) return;
+const login = useCallback(
+  async (email: string, password: string) => {
+
+    const auth = getFirebaseAuth();
+
+    const credential =
+      await signInWithEmailAndPassword(
+        auth,
+        email,
+        password
+      );
+
+    const user = credential.user;
+
     setSession({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
+      id: user.uid,
+      name: user.displayName || "Usuario",
+      email: user.email || email,
+      role: "consultante",
     });
-  }, []);
 
-  const logout = useCallback(() => {
+  },
+  []
+);
+
+const logout = useCallback(
+  async () => {
+
+    const auth = getFirebaseAuth();
+
+    await signOut(auth);
+
     setSession(null);
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw) as PersistedState;
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({ ...parsed, session: null }),
-        );
-      } else {
-        localStorage.setItem(
-          STORAGE_KEY,
-          JSON.stringify({
-            cases: SEED_CASES,
-            appointments: SEED_APPOINTMENTS,
-            session: null,
-          }),
-        );
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
 
+    localStorage.removeItem(STORAGE_KEY);
 
+  },
+  []
+);
   const createCase = useCallback(
     (input: CreateCaseInput): LegalCase => {
       const classification = classifyCase(
