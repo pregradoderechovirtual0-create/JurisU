@@ -18,14 +18,28 @@ import {
   updateProfile,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { getFirebaseAuth, isFirebaseConfigured } from "./firebase";
+import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from "./firebase";
+import { 
+  doc, 
+  setDoc, 
+  serverTimestamp,
+  getDoc
+} from "firebase/firestore";
+
+export interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  role: string;
+}
 
 export type AuthView = "login" | "register" | "verify";
 
-interface AuthContextValue {
-  ready: boolean;
-  configured: boolean;
+interface AuthContextValue { 
+  ready: boolean; 
+  configured: boolean; 
   firebaseUser: FirebaseUser | null;
+  profile: UserProfile | null;
   emailVerified: boolean;
   authError: string | null;
   authBusy: boolean;
@@ -73,6 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const configured = isFirebaseConfigured();
   const [ready, setReady] = useState(!configured);
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -83,10 +98,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const auth = getFirebaseAuth();
-    const unsub = onAuthStateChanged(auth, (user) => {
-      setFirebaseUser(user);
-      setReady(true);
-    });
+    
+const unsub = onAuthStateChanged(auth, async (user) => {
+
+  if (user) {
+
+    await user.reload();
+
+    const updatedUser = auth.currentUser;
+
+    setFirebaseUser(updatedUser);
+
+    const db = getFirebaseDb();
+
+    const userRef = doc(
+      db,
+      "users",
+      updatedUser!.uid
+    );
+
+    const userSnap = await getDoc(userRef);
+
+    if(userSnap.exists()){
+
+      setProfile(
+        userSnap.data() as UserProfile
+      );
+
+    }
+
+  } else {
+
+    setFirebaseUser(null);
+    setProfile(null);
+
+  }
+
+  setReady(true);
+
+});
     return () => unsub();
   }, [configured]);
 
@@ -119,6 +169,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await updateProfile(cred.user, { displayName: name.trim() });
         }
         await sendEmailVerification(cred.user);
+
+        const db = getFirebaseDb();
+
+await setDoc(
+  doc(db, "users", cred.user.uid),
+  {
+    uid: cred.user.uid,
+    name: name.trim(),
+    email: email.trim(),
+    role: "consultante",
+    createdAt: serverTimestamp(),
+  }
+);
         await cred.user.reload();
         setFirebaseUser(auth.currentUser);
       } catch (error) {
@@ -131,41 +194,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [configured],
   );
 
-  const login = useCallback(
-    async (email: string, password: string) => {
-      if (!configured) {
-        setAuthError("Firebase no está configurado en este entorno.");
-        return;
-      }
-      setAuthBusy(true);
-      setAuthError(null);
-      try {
-        const auth = getFirebaseAuth();
-        const cred = await signInWithEmailAndPassword(
-          auth,
-          email.trim(),
-          password,
-        );
-        await cred.user.reload();
-        setFirebaseUser(auth.currentUser);
-} catch (error: any) {
+  const auth = getFirebaseAuth();
 
-  console.error("🔥 ERROR FIREBASE");
-  console.error(error);
-  console.error("CODIGO:", error.code);
-  console.error("MENSAJE:", error.message);
+const login = useCallback(
+  async (email: string, password: string) => {
 
-  setAuthError(
-    error.code + " - " + error.message
-  );
+    if (!configured) {
+      setAuthError("Firebase no está configurado en este entorno.");
+      return;
+    }
 
-  throw error;
-}finally {
-        setAuthBusy(false);
-      }
-    },
-    [configured],
-  );
+    setAuthBusy(true);
+    setAuthError(null);
+
+    try {
+
+      const auth = getFirebaseAuth();
+
+      const cred = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password,
+      );
+
+
+      await cred.user.reload();
+
+
+      const updatedUser = auth.currentUser;
+
+
+      setFirebaseUser(updatedUser);
+
+
+    } catch (error) {
+
+      console.error("🔥 ERROR FIREBASE");
+      console.error(error);
+
+
+      setAuthError(mapAuthError(error));
+
+      throw error;
+
+    } finally {
+
+      setAuthBusy(false);
+
+    }
+
+  },
+  [configured],
+);
 
   const logout = useCallback(async () => {
     if (!configured) return;
@@ -217,6 +297,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       configured,
       firebaseUser,
+      profile,
       emailVerified: Boolean(firebaseUser?.emailVerified),
       authError,
       authBusy,
@@ -231,6 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ready,
       configured,
       firebaseUser,
+      profile,
       authError,
       authBusy,
       clearAuthError,

@@ -188,16 +188,18 @@ export default function HomePage() {
                 <Button
                   className="bg-[var(--ink)] text-[var(--paper)] hover:bg-[var(--teal)]"
                   disabled={authBusy}
-                  onClick={async () => {
-                    const ok = await reloadUser();
-                    if (ok) {
-                      setInfo("Correo confirmado. Elige tu rol para continuar.");
-                    } else {
-                      setInfo(
-                        "Aún no aparece confirmado. Revisa el correo y vuelve a intentar.",
-                      );
-                    }
-                  }}
+onClick={async () => {
+  const ok = await reloadUser();
+
+  if (ok) {
+    setInfo("Correo confirmado. Elige tu rol para continuar.");
+    window.location.reload();
+  } else {
+    setInfo(
+      "Aún no aparece confirmado. Revisa el correo y vuelve a intentar.",
+    );
+  }
+}}
                 >
                   Ya confirmé mi correo
                 </Button>
