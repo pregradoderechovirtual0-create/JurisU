@@ -10,8 +10,16 @@ export interface ClassificationResult {
 
 /**
  * Clasificación automática por coincidencia de palabras clave.
- * Simula el módulo inteligente descrito en la guía inicial.
+ * Simula el módulo inteligente descrito en la guía inicial. Cambios a mejorar la precisión pueden incluir:
+ * - Uso de un modelo de lenguaje entrenado para clasificación de texto.
+ * - Análisis semántico y no solo coincidencia literal.
+ * - Ajuste de pesos según la relevancia de cada palabra clave.
+ * - Inclusión de sinónimos y términos relacionados.
+ * - Consideración de contexto y estructura del texto.
+ * - Evaluación de la longitud y complejidad del texto para ajustar la confianza.
+ * - Implementación de un sistema de retroalimentación para mejorar el modelo con el tiempo.
  */
+
 export function classifyCase(text: string): ClassificationResult {
   const normalized = text
     .toLowerCase()

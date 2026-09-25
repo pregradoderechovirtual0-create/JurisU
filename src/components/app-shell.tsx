@@ -12,11 +12,11 @@ import {
   Tags,
 } from "lucide-react";
 import { useApp } from "@/lib/app-context";
+import { useAuth } from "@/lib/auth-context";
 import { ROLE_LABELS } from "@/lib/data";
 import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { useEffect } from "react";
 
 const NAV = [
   { href: "/panel", label: "Panel", icon: LayoutDashboard },
@@ -30,8 +30,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { session, logout, ready } = useApp();
+  const {
+    ready: authReady,
+    configured,
+    firebaseUser,
+    emailVerified,
+    logout: logoutAuth,
+  } = useAuth();
 
-  if (!ready) {
+  if (!ready || !authReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
         <p className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
@@ -41,15 +48,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-useEffect(() => {
+  if (configured && (!firebaseUser || !emailVerified)) {
+    router.replace("/");
+    return null;
+  }
+
   if (!session) {
     router.replace("/");
+    return null;
   }
-}, [session, router]);
 
-if (!session) {
-  return null;
-}
+  async function handleLogout() {
+    logout();
+    if (configured) await logoutAuth();
+    router.push("/");
+  }
 
   const initials = session.name
     .split(" ")
@@ -116,8 +129,7 @@ if (!session) {
             <button
               type="button"
               onClick={() => {
-                logout();
-                router.push("/");
+                void handleLogout();
               }}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-[var(--ink)]/70 transition-colors hover:bg-[var(--ink)]/5 hover:text-[var(--ink)]"
               aria-label="Cerrar sesión"
