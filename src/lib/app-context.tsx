@@ -41,7 +41,10 @@ interface CreateCaseInput {
   title: string;
   description: string;
   consultanteName: string;
+  consultanteDocument: string
   consultanteEmail: string;
+  consultanteAddress: string;
+  consultanteStratum: string;
   consultantePhone: string;
 }
 
