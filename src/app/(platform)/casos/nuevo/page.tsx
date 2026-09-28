@@ -18,7 +18,10 @@ export default function NuevoCasoPage() {
   const [description, setDescription] = useState("");
   const [name, setName] = useState(session?.name ?? "");
   const [email, setEmail] = useState(session?.email ?? "");
+  const [document, setDocument] = useState("");
   const [phone, setPhone] = useState("");
+  const [Address, setAddress] = useState("");
+  const [Mode, setMode]= useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const preview = useMemo(() => {
@@ -72,6 +75,18 @@ export default function NuevoCasoPage() {
               onChange={(e) => setName(e.target.value)}
             />
           </div>
+
+          <div className="space-y-2">
+          <Label htmlFor="document">Documento</Label>
+          <Input
+            id="document"
+            type="document"
+            required
+            value={document}
+            onChange={(e) => setDocument(e.target.value)}
+          />
+        </div>
+
           <div className="space-y-2">
             <Label htmlFor="phone">Teléfono</Label>
             <Input
@@ -85,6 +100,17 @@ export default function NuevoCasoPage() {
         </div>
 
         <div className="space-y-2">
+          <Label htmlFor="address">Direccion</Label>
+          <Input
+            id="address"
+            type="address"
+            required
+            value={Address}
+            onChange={(e) => setAddress(e.target.value)}
+          />
+        </div>
+
+        <div className="space-y-2">
           <Label htmlFor="email">Correo</Label>
           <Input
             id="email"
@@ -94,6 +120,23 @@ export default function NuevoCasoPage() {
             onChange={(e) => setEmail(e.target.value)}
           />
         </div>
+
+        <div className="space-y-2">
+  <Label htmlFor="mode">Modalidad</Label>
+  <select
+    id="mode"
+    required
+    value={Mode}
+    onChange={(e) => setMode(e.target.value)}
+    className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+  >
+    <option value="" disabled>
+      Selecciona una modalidad
+    </option>
+    <option value="presencial">Presencial</option>
+    <option value="virtual">Virtual</option>
+  </select>
+</div>
 
         <div className="space-y-2">
           <Label htmlFor="title">Asunto</Label>
