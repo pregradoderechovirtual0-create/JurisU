@@ -1,7 +1,4 @@
 "use client";
-
-
-
 import {
   createContext,
   useCallback,
@@ -13,6 +10,8 @@ import {
 } from "react";
 import { classifyCase, nextFolio } from "./classify";
 
+import { createCaseInFirestore, subscribeCases } from "./cases";
+
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
@@ -21,12 +20,7 @@ import {
 
 import { getFirebaseAuth } from "./firebase";
 
-import {
-  CATEGORIES,
-  SEED_APPOINTMENTS,
-  SEED_CASES,
-  USERS,
-} from "./data";
+import { CATEGORIES, SEED_APPOINTMENTS, USERS } from "./data";
 import type {
   Appointment,
   CaseStatus,
@@ -39,7 +33,6 @@ import type {
 const STORAGE_KEY = "jurisu-consultorio-v1";
 
 interface PersistedState {
-  cases: LegalCase[];
   appointments: Appointment[];
   session: SessionUser | null;
 }
@@ -55,15 +48,12 @@ interface CreateCaseInput {
 interface AppContextValue {
   ready: boolean;
   session: SessionUser | null;
-  cases: LegalCase[];
   appointments: Appointment[];
   users: User[];
   categories: typeof CATEGORIES;
-login: (
-  email: string,
-  password: string
-) => Promise<void>;  logout: () => void;
-  createCase: (input: CreateCaseInput) => LegalCase;
+  login: (email: string, password: string) => Promise<void>;
+  logout: () => void;
+  createCase: (input: CreateCaseInput) => Promise<LegalCase>;
   validateCase: (
     caseId: string,
     categoryId: LegalCategoryId,
@@ -83,87 +73,62 @@ login: (
 
 const AppContext = createContext<AppContextValue | null>(null);
 
-function loadState(): PersistedState {
-  if (typeof window === "undefined") {
-    return { cases: SEED_CASES, appointments: SEED_APPOINTMENTS, session: null };
-  }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return { cases: SEED_CASES, appointments: SEED_APPOINTMENTS, session: null };
-    }
-    return JSON.parse(raw) as PersistedState;
-  } catch {
-    return { cases: SEED_CASES, appointments: SEED_APPOINTMENTS, session: null };
-  }
-}
-
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [cases, setCases] = useState<LegalCase[]>(SEED_CASES);
+  const [cases, setCases] = useState<LegalCase[]>([]);
   const [appointments, setAppointments] =
     useState<Appointment[]>(SEED_APPOINTMENTS);
   const [session, setSession] = useState<SessionUser | null>(null);
 
   useEffect(() => {
+    const auth = getFirebaseAuth();
 
-  const state = loadState();
-
-  setCases(state.cases);
-  setAppointments(state.appointments);
-
-
-  const auth = getFirebaseAuth();
-
-
-  const unsubscribe = onAuthStateChanged(
-    auth,
-    (user)=>{
-
-      if(user){
-
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (user) {
         setSession({
-          id:user.uid,
-          name:user.displayName || "Usuario",
-          email:user.email || "",
-          role:"consultante",
+          id: user.uid,
+          name: user.displayName || "Usuario",
+          email: user.email || "",
+          role: "consultante",
         });
-
-      }else{
-
+      } else {
         setSession(null);
-
       }
 
-
       setReady(true);
+    });
 
-    }
-  );
+    const unsubscribeCases = subscribeCases(
+      (firebaseCases) => {
+        setCases(firebaseCases);
+      },
+      (error) => {
+        console.error("Error cargando casos:", error);
+      },
+    );
 
-
-  return ()=>unsubscribe();
-
-
-}, []);
+    return () => {
+      unsubscribeAuth();
+      unsubscribeCases();
+    };
+  }, []);
 
   useEffect(() => {
     if (!ready) return;
-    const payload: PersistedState = { cases, appointments, session };
+
+    const payload: PersistedState = {
+      cases,
+      appointments,
+      session,
+    };
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }, [ready, cases, appointments, session]);
+  }, [ready, appointments, session]);
 
-const login = useCallback(
-  async (email: string, password: string) => {
-
+  const login = useCallback(async (email: string, password: string) => {
     const auth = getFirebaseAuth();
 
-    const credential =
-      await signInWithEmailAndPassword(
-        auth,
-        email,
-        password
-      );
+    const credential = await signInWithEmailAndPassword(auth, email, password);
 
     const user = credential.user;
 
@@ -173,14 +138,9 @@ const login = useCallback(
       email: user.email || email,
       role: "consultante",
     });
+  }, []);
 
-  },
-  []
-);
-
-const logout = useCallback(
-  async () => {
-
+  const logout = useCallback(async () => {
     const auth = getFirebaseAuth();
 
     await signOut(auth);
@@ -188,22 +148,20 @@ const logout = useCallback(
     setSession(null);
 
     localStorage.removeItem(STORAGE_KEY);
+  }, []);
 
-  },
-  []
-);
   const createCase = useCallback(
-    (input: CreateCaseInput): LegalCase => {
+    async (input: CreateCaseInput): Promise<LegalCase> => {
       const classification = classifyCase(
         `${input.title} ${input.description}`,
       );
-      const now = new Date().toISOString();
-      const legalCase: LegalCase = {
-        id: `case-${crypto.randomUUID().slice(0, 8)}`,
+
+      const legalCase: Omit<LegalCase, "id" | "createdAt" | "updatedAt"> = {
         folio: nextFolio(cases.length + 20),
         title: input.title,
         description: input.description,
-        consultanteId: session?.role === "consultante" ? session.id : "cons-guest",
+        consultanteId:
+          session?.role === "consultante" ? session.id : "cons-guest",
         consultanteName: input.consultanteName,
         consultanteEmail: input.consultanteEmail,
         consultantePhone: input.consultantePhone,
@@ -212,11 +170,16 @@ const logout = useCallback(
         classificationRationale: classification.rationale,
         status: "pendiente_validacion",
         notes: [],
-        createdAt: now,
-        updatedAt: now,
       };
-      setCases((prev) => [legalCase, ...prev]);
-      return legalCase;
+
+      const id = await createCaseInFirestore(legalCase);
+
+      return {
+        id,
+        ...legalCase,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
     },
     [cases.length, session],
   );

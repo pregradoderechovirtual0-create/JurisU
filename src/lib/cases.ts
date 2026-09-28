@@ -1,23 +1,74 @@
 import {
- collection,
- addDoc,
- getDocs,
- serverTimestamp
+  addDoc,
+  collection,
+  onSnapshot,
+  serverTimestamp,
+  type Unsubscribe,
 } from "firebase/firestore";
 
-import {getFirebaseDb} from "./firebase";
+import { getFirebaseDb } from "./firebase";
+import type { LegalCase } from "./types";
 
+const CASES_COLLECTION = "cases";
 
-export async function createCase(data:any){
+type FirestoreCaseInput = Omit<
+  LegalCase,
+  "id" | "createdAt" | "updatedAt"
+>;
 
-const db=getFirebaseDb();
+/**
+ * Crea un nuevo caso en Firestore.
+ */
+export async function createCaseInFirestore(
+  data: FirestoreCaseInput,
+): Promise<string> {
+  const db = getFirebaseDb();
 
-return await addDoc(
- collection(db,"cases"),
- {
-  ...data,
-  createdAt:serverTimestamp()
- }
-);
+  const docRef = await addDoc(collection(db, CASES_COLLECTION), {
+    ...data,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 
+  return docRef.id;
+}
+
+/**
+ * Escucha los casos de Firestore en tiempo real.
+ */
+export function subscribeCases(
+  onCases: (cases: LegalCase[]) => void,
+  onError?: (error: Error) => void,
+): Unsubscribe {
+  const db = getFirebaseDb();
+
+  return onSnapshot(
+    collection(db, CASES_COLLECTION),
+    (snapshot) => {
+      const cases: LegalCase[] = snapshot.docs.map((doc) => {
+        const data = doc.data();
+
+        const createdAt =
+          data.createdAt?.toDate?.().toISOString() ??
+          new Date().toISOString();
+
+        const updatedAt =
+          data.updatedAt?.toDate?.().toISOString() ??
+          createdAt;
+
+        return {
+          id: doc.id,
+          ...data,
+          createdAt,
+          updatedAt,
+        } as LegalCase;
+      });
+
+      onCases(cases);
+    },
+    (error) => {
+      console.error("Error al escuchar casos:", error);
+      onError?.(error);
+    },
+  );
 }
