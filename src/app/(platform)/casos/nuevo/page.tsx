@@ -21,6 +21,7 @@ export default function NuevoCasoPage() {
   const [document, setDocument] = useState("");
   const [phone, setPhone] = useState("");
   const [Address, setAddress] = useState("");
+  const [Stratum, setStratum] = useState("");
   const [Mode, setMode]= useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -43,6 +44,7 @@ export default function NuevoCasoPage() {
       title: title.trim(),
       description: description.trim(),
       consultanteName: name.trim(),
+      consultanteDocument: document.trim(),
       consultanteEmail: email.trim(),
       consultantePhone: phone.trim(),
     });
@@ -108,6 +110,27 @@ export default function NuevoCasoPage() {
             value={Address}
             onChange={(e) => setAddress(e.target.value)}
           />
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="stratum">Estrato</Label>
+          <select
+            id="stratum"
+            required
+            value={Stratum}
+            onChange={(e) => setStratum(e.target.value)}
+          className="h-9 w-full rounded-md border border-input bg-transparent px-3 text-sm shadow-xs outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+  >
+            <option value="" disabled>
+            Selecciona un Estrato
+          </option>
+          <option value="1">1</option>
+          <option value="2">2</option>
+          <option value="1">3</option>
+          <option value="1">4</option>
+          <option value="1">5</option>
+          <option value="1">6</option>
+          </select>
         </div>
 
         <div className="space-y-2">
