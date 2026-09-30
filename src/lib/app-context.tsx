@@ -10,6 +10,8 @@ import {
 } from "react";
 import { classifyCase, nextFolio } from "./classify";
 
+import { obtenerUsuario } from "./users/users.service";
+
 import { createCaseInFirestore, subscribeCases } from "./cases";
 
 import {
@@ -20,7 +22,8 @@ import {
 
 import { getFirebaseAuth } from "./firebase";
 
-import { CATEGORIES, SEED_APPOINTMENTS, USERS } from "./data";
+import { CATEGORIES, SEED_APPOINTMENTS } from "./data";
+import { obtenerUsuariosAutorizados } from "./users/users.service";
 import type {
   Appointment,
   CaseStatus,
@@ -33,6 +36,7 @@ import type {
 const STORAGE_KEY = "jurisu-consultorio-v1";
 
 interface PersistedState {
+  cases: LegalCase[];
   appointments: Appointment[];
   session: SessionUser | null;
 }
@@ -41,7 +45,7 @@ interface CreateCaseInput {
   title: string;
   description: string;
   consultanteName: string;
-  consultanteDocument: string
+  consultanteDocument: string;
   consultanteEmail: string;
   consultanteAddress: string;
   consultanteStratum: string;
@@ -55,7 +59,7 @@ interface AppContextValue {
   users: User[];
   categories: typeof CATEGORIES;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   createCase: (input: CreateCaseInput) => Promise<LegalCase>;
   validateCase: (
     caseId: string,
@@ -82,17 +86,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [appointments, setAppointments] =
     useState<Appointment[]>(SEED_APPOINTMENTS);
   const [session, setSession] = useState<SessionUser | null>(null);
+  const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
     const auth = getFirebaseAuth();
 
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
+        const userData = await obtenerUsuario(user.uid);
+
         setSession({
           id: user.uid,
-          name: user.displayName || "Usuario",
+          name: userData?.name || "Usuario",
           email: user.email || "",
-          role: "consultante",
+          role: userData?.role || "consultante",
         });
       } else {
         setSession(null);
@@ -101,7 +108,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setReady(true);
     });
 
+    return () => {
+      unsubscribeAuth();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!session) return;
+
+    async function loadUsers() {
+      const usuarios = await obtenerUsuariosAutorizados();
+
+      setUsers(usuarios);
+    }
+
+    loadUsers();
+  }, [session]);
+
+  useEffect(() => {
+    if (!session) return;
+
     const unsubscribeCases = subscribeCases(
+      session.id,
+      session.role,
       (firebaseCases) => {
         setCases(firebaseCases);
       },
@@ -111,10 +140,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
 
     return () => {
-      unsubscribeAuth();
       unsubscribeCases();
     };
-  }, []);
+  }, [session]);
 
   useEffect(() => {
     if (!ready) return;
@@ -131,16 +159,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const auth = getFirebaseAuth();
 
-    const credential = await signInWithEmailAndPassword(auth, email, password);
-
-    const user = credential.user;
-
-    setSession({
-      id: user.uid,
-      name: user.displayName || "Usuario",
-      email: user.email || email,
-      role: "consultante",
-    });
+    await signInWithEmailAndPassword(auth, email, password);
   }, []);
 
   const logout = useCallback(async () => {
@@ -153,28 +172,72 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
+  const asignarAsesorAutomatico = (categoryId: LegalCategoryId) => {
+    const asesores = users.filter(
+      (u) => u.role === "asesor" && u.category === categoryId,
+    );
+
+    if (asesores.length === 0) {
+      return null;
+    }
+
+    return asesores[Math.floor(Math.random() * asesores.length)];
+  };
+
+  const asignarPracticanteAutomatico = () => {
+    const practicantes = users
+      .filter((u) => u.role === "practicante")
+      .filter((u) => (u.activeCases ?? 0) < 10);
+
+    if (practicantes.length === 0) {
+      return null;
+    }
+
+    return practicantes.sort(
+      (a, b) => (a.activeCases ?? 0) - (b.activeCases ?? 0),
+    )[0];
+  };
+
   const createCase = useCallback(
     async (input: CreateCaseInput): Promise<LegalCase> => {
       const classification = classifyCase(
         `${input.title} ${input.description}`,
       );
 
+      const asesor = asignarAsesorAutomatico(classification.categoryId);
+
+      const practicante = asignarPracticanteAutomatico();
+
       const legalCase: Omit<LegalCase, "id" | "createdAt" | "updatedAt"> = {
         folio: nextFolio(cases.length + 20),
+
         title: input.title,
         description: input.description,
+
         consultanteId:
           session?.role === "consultante" ? session.id : "cons-guest",
+
         consultanteName: input.consultanteName,
         consultanteEmail: input.consultanteEmail,
         consultantePhone: input.consultantePhone,
+
         proposedCategoryId: classification.categoryId,
+
+        confirmedCategoryId: classification.categoryId,
+
         classificationConfidence: classification.confidence,
+
         classificationRationale: classification.rationale,
-        status: "pendiente_validacion",
+
+        advisorId: asesor?.id,
+        advisorName: asesor?.name,
+
+        internId: practicante?.id,
+        internName: practicante?.name,
+
+        status: asesor ? "asignado_asesor" : "pendiente_validacion",
         notes: [],
       };
-
       const id = await createCaseInFirestore(legalCase);
 
       return {
@@ -189,7 +252,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const validateCase = useCallback(
     (caseId: string, categoryId: LegalCategoryId, advisorId: string) => {
-      const advisor = USERS.find((u) => u.id === advisorId);
+      const advisor = users.find((u) => u.id === advisorId);
       setCases((prev) =>
         prev.map((c) =>
           c.id === caseId
@@ -205,7 +268,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ),
       );
     },
-    [],
+    [users],
   );
 
   const assignIntern = useCallback(
@@ -214,7 +277,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       internId: string,
       appointment: Omit<Appointment, "id" | "caseId" | "status">,
     ) => {
-      const intern = USERS.find((u) => u.id === internId);
+      const intern = users.find((u) => u.id === internId);
       const aptId = `apt-${crypto.randomUUID().slice(0, 8)}`;
       setAppointments((prev) => [
         {
@@ -240,7 +303,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ),
       );
     },
-    [],
+    [users],
   );
 
   const addNote = useCallback(
@@ -300,12 +363,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             c.consultanteEmail === session.email,
         );
       case "asesor":
-        return cases.filter(
-          (c) =>
-            c.advisorId === session.id ||
-            c.status === "pendiente_validacion" ||
-            (!c.advisorId && c.status === "asignado_asesor"),
-        );
+        return cases.filter((c) => c.advisorId === session.id);
       case "practicante":
         return cases.filter((c) => c.internId === session.id);
       case "administrativo":
@@ -319,7 +377,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     session,
     cases,
     appointments,
-    users: USERS,
+    users,
     categories: CATEGORIES,
     login,
     logout,

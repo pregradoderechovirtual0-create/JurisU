@@ -6,6 +6,10 @@ import { useApp } from "@/lib/app-context";
 
 export default function CasosPage() {
   const { session, visibleCases } = useApp();
+
+  const sortedCases = [...visibleCases].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  );
   if (!session) return null;
 
   return (
@@ -30,7 +34,7 @@ export default function CasosPage() {
           </Link>
         )}
       </header>
-      <CaseList cases={visibleCases} />
+      <CaseList cases={sortedCases} />
     </div>
   );
 }

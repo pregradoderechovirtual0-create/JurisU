@@ -1,5 +1,7 @@
 "use client";
 
+import { useEffect } from "react";
+
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -10,6 +12,7 @@ import {
   PlusCircle,
   Scale,
   Tags,
+  Users,
 } from "lucide-react";
 import { useApp } from "@/lib/app-context";
 import { useAuth } from "@/lib/auth-context";
@@ -24,6 +27,7 @@ const NAV = [
   { href: "/casos/nuevo", label: "Nueva solicitud", icon: PlusCircle },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/categorias", label: "Categorías", icon: Tags },
+  { href: "/admin/usuarios", label: "Usuarios", icon: Users },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,6 +42,43 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     logout: logoutAuth,
   } = useAuth();
 
+  useEffect(() => {
+    if (!ready || !authReady) return;
+
+    if (configured && (!firebaseUser || !emailVerified)) {
+      router.replace("/");
+    }
+
+    if (!session) {
+      router.replace("/");
+    }
+  }, [
+    ready,
+    authReady,
+    configured,
+    firebaseUser,
+    emailVerified,
+    session,
+    router,
+  ]);
+
+  useEffect(() => {
+    if (!session) return;
+
+    const roleHome = {
+      administrativo: "/admin",
+      consultante: "/panel",
+      asesor: "/asesor",
+      practicante: "/practicante",
+    };
+
+    const home = roleHome[session.role];
+
+    if (pathname === "/panel" && home !== "/panel") {
+      router.replace(home);
+    }
+  }, [session, pathname, router]);
+
   if (!ready || !authReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
@@ -48,14 +89,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (configured && (!firebaseUser || !emailVerified)) {
-    router.replace("/");
+  if (!session) {
     return null;
   }
 
-  if (!session) {
-    router.replace("/");
-    return null;
+  if (session.role === "administrativo" && pathname === "/panel") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
+        <p className="text-lg text-[var(--ink)]">
+          Cargando panel administrativo...
+        </p>
+      </div>
+    );
   }
 
   async function handleLogout() {
@@ -70,17 +115,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     .slice(0, 2)
     .join("");
 
-  const navItems = NAV.filter((item) => {
-    if (session.role === "consultante") {
-      return ["Panel", "Casos", "Nueva solicitud", "Agenda"].includes(
-        item.label,
-      );
+  const navItems = (() => {
+    switch (session.role) {
+      case "administrativo":
+        return [
+          { href: "/admin", label: "Panel", icon: LayoutDashboard },
+          { href: "/casos", label: "Casos", icon: Briefcase },
+          { href: "/agenda", label: "Agenda", icon: CalendarDays },
+          { href: "/categorias", label: "Categorías", icon: Tags },
+          { href: "/admin/usuarios", label: "Usuarios", icon: Users },
+        ];
+
+      case "asesor":
+        return [
+          { href: "/asesor", label: "Panel", icon: LayoutDashboard },
+          { href: "/casos", label: "Casos", icon: Briefcase },
+          { href: "/agenda", label: "Agenda", icon: CalendarDays },
+        ];
+
+      case "practicante":
+        return [
+          { href: "/practicante", label: "Panel", icon: LayoutDashboard },
+          { href: "/casos", label: "Casos", icon: Briefcase },
+          { href: "/agenda", label: "Agenda", icon: CalendarDays },
+        ];
+
+      case "consultante":
+      default:
+        return [
+          { href: "/panel", label: "Panel", icon: LayoutDashboard },
+          { href: "/casos", label: "Casos", icon: Briefcase },
+          { href: "/casos/nuevo", label: "Nueva solicitud", icon: PlusCircle },
+          { href: "/agenda", label: "Agenda", icon: CalendarDays },
+        ];
     }
-    if (session.role === "practicante") {
-      return ["Panel", "Casos", "Agenda"].includes(item.label);
-    }
-    return true;
-  });
+  })();
 
   return (
     <div className="min-h-screen bg-[var(--surface)]">
@@ -98,7 +167,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <header className="border-b border-[var(--ink)]/10 bg-[var(--paper)]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
-          <Link href="/panel" className="group flex items-center gap-2.5">
+          <Link
+            href={session.role === "administrativo" ? "/admin" : "/panel"}
+            className="group flex items-center gap-2.5"
+          >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ink)] text-[var(--paper)] transition-transform duration-300 group-hover:scale-105">
               <Scale className="h-4.5 w-4.5" />
             </span>
@@ -181,8 +253,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <Separator className="my-4 hidden lg:block" />
           <p className="hidden text-xs leading-relaxed text-[var(--muted)] lg:block">
-            Flujo: registro → clasificación → validación → asesor →
-            practicante → atención → cierre.
+            Flujo: registro → clasificación → validación → asesor → practicante
+            → atención → cierre.
           </p>
         </aside>
 

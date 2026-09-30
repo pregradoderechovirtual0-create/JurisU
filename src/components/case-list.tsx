@@ -4,9 +4,13 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { StatusBadge } from "@/components/status-badge";
 import { CATEGORIES } from "@/lib/data";
+import { useApp } from "@/lib/app-context";
 import type { LegalCase } from "@/lib/types";
 
 export function CaseList({ cases }: { cases: LegalCase[] }) {
+  const { session } = useApp();
+
+  const isAdmin = session?.role === "administrativo";
   if (cases.length === 0) {
     return (
       <div className="rounded-xl border border-dashed border-[var(--ink)]/20 bg-[var(--paper)]/60 px-6 py-14 text-center">
@@ -32,6 +36,12 @@ export function CaseList({ cases }: { cases: LegalCase[] }) {
         const category = CATEGORIES.find(
           (cat) => cat.id === (c.confirmedCategoryId ?? c.proposedCategoryId),
         );
+
+        const createdDate = new Date(c.createdAt).toLocaleDateString("es-CO", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
         return (
           <li key={c.id}>
             <Link
@@ -52,6 +62,16 @@ export function CaseList({ cases }: { cases: LegalCase[] }) {
                   {category?.name ?? "Sin categoría"} · {c.consultanteName}
                   {c.advisorName ? ` · ${c.advisorName}` : ""}
                 </p>
+
+                {isAdmin && (
+                  <div className="mt-2 space-y-1 text-xs text-[var(--muted)]">
+                    <p>📅 Llegó: {createdDate}</p>
+
+                    <p>Estado interno: {c.status}</p>
+
+                    {c.advisorName && <p>Asesor: {c.advisorName}</p>}
+                  </div>
+                )}
               </div>
               <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-[var(--muted)] transition-transform group-hover:translate-x-0.5" />
             </Link>

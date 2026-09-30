@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocs,
   onSnapshot,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -49,4 +50,20 @@ export async function obtenerUsuario(uid: string): Promise<User | null> {
     id: snapshot.id,
     ...snapshot.data(),
   } as User;
+}
+
+export async function obtenerUsuariosAutorizados(): Promise<User[]> {
+
+  const db = getFirebaseDb();
+
+  const snap = await getDocs(
+    collection(db, USERS_COLLECTION)
+  );
+
+
+  return snap.docs.map((documento)=>({
+    id: documento.id,
+    ...documento.data(),
+  })) as User[];
+
 }

@@ -18,13 +18,14 @@ import {
   updateProfile,
   type User as FirebaseUser,
 } from "firebase/auth";
-import { getFirebaseAuth, getFirebaseDb, isFirebaseConfigured } from "./firebase";
-import { 
-  doc, 
-  setDoc, 
-  serverTimestamp,
-  getDoc
-} from "firebase/firestore";
+import {
+  getFirebaseAuth,
+  getFirebaseDb,
+  isFirebaseConfigured,
+} from "./firebase";
+import { doc, setDoc, serverTimestamp, getDoc } from "firebase/firestore";
+
+import { obtenerRolAutorizado } from "./users/authorized-users.service";
 
 export interface UserProfile {
   uid: string;
@@ -35,9 +36,9 @@ export interface UserProfile {
 
 export type AuthView = "login" | "register" | "verify";
 
-interface AuthContextValue { 
-  ready: boolean; 
-  configured: boolean; 
+interface AuthContextValue {
+  ready: boolean;
+  configured: boolean;
   firebaseUser: FirebaseUser | null;
   profile: UserProfile | null;
   emailVerified: boolean;
@@ -98,45 +99,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     const auth = getFirebaseAuth();
-    
-const unsub = onAuthStateChanged(auth, async (user) => {
 
-  if (user) {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        await user.reload();
 
-    await user.reload();
+        const updatedUser = auth.currentUser;
 
-    const updatedUser = auth.currentUser;
+        setFirebaseUser(updatedUser);
 
-    setFirebaseUser(updatedUser);
+        const db = getFirebaseDb();
 
-    const db = getFirebaseDb();
+        const userRef = doc(db, "users", updatedUser!.uid);
 
-    const userRef = doc(
-      db,
-      "users",
-      updatedUser!.uid
-    );
+        const userSnap = await getDoc(userRef);
 
-    const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+          setProfile(userSnap.data() as UserProfile);
+        }
+      } else {
+        setFirebaseUser(null);
+        setProfile(null);
+      }
 
-    if(userSnap.exists()){
-
-      setProfile(
-        userSnap.data() as UserProfile
-      );
-
-    }
-
-  } else {
-
-    setFirebaseUser(null);
-    setProfile(null);
-
-  }
-
-  setReady(true);
-
-});
+      setReady(true);
+    });
     return () => unsub();
   }, [configured]);
 
@@ -172,16 +159,18 @@ const unsub = onAuthStateChanged(auth, async (user) => {
 
         const db = getFirebaseDb();
 
-await setDoc(
-  doc(db, "users", cred.user.uid),
-  {
-    uid: cred.user.uid,
-    name: name.trim(),
-    email: email.trim(),
-    role: "consultante",
-    createdAt: serverTimestamp(),
-  }
-);
+        const autorizado = await obtenerRolAutorizado(email.trim());
+
+        await setDoc(doc(db, "users", cred.user.uid), {
+          uid: cred.user.uid,
+          name: name.trim(),
+          email: email.trim(),
+
+          role: autorizado?.role ?? "consultante",
+
+          createdAt: serverTimestamp(),
+        });
+
         await cred.user.reload();
         setFirebaseUser(auth.currentUser);
       } catch (error) {
@@ -196,56 +185,43 @@ await setDoc(
 
   const auth = getFirebaseAuth();
 
-const login = useCallback(
-  async (email: string, password: string) => {
+  const login = useCallback(
+    async (email: string, password: string) => {
+      if (!configured) {
+        setAuthError("Firebase no está configurado en este entorno.");
+        return;
+      }
 
-    if (!configured) {
-      setAuthError("Firebase no está configurado en este entorno.");
-      return;
-    }
+      setAuthBusy(true);
+      setAuthError(null);
 
-    setAuthBusy(true);
-    setAuthError(null);
+      try {
+        const auth = getFirebaseAuth();
 
-    try {
+        const cred = await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password,
+        );
 
-      const auth = getFirebaseAuth();
+        await cred.user.reload();
 
-      const cred = await signInWithEmailAndPassword(
-        auth,
-        email.trim(),
-        password,
-      );
+        const updatedUser = auth.currentUser;
 
+        setFirebaseUser(updatedUser);
+      } catch (error) {
+        console.error("🔥 ERROR FIREBASE");
+        console.error(error);
 
-      await cred.user.reload();
+        setAuthError(mapAuthError(error));
 
-
-      const updatedUser = auth.currentUser;
-
-
-      setFirebaseUser(updatedUser);
-
-
-    } catch (error) {
-
-      console.error("🔥 ERROR FIREBASE");
-      console.error(error);
-
-
-      setAuthError(mapAuthError(error));
-
-      throw error;
-
-    } finally {
-
-      setAuthBusy(false);
-
-    }
-
-  },
-  [configured],
-);
+        throw error;
+      } finally {
+        setAuthBusy(false);
+      }
+    },
+    [configured],
+  );
 
   const logout = useCallback(async () => {
     if (!configured) return;

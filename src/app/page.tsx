@@ -2,32 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  ArrowRight,
-  MailCheck,
-  Scale,
-  Sparkles,
-} from "lucide-react";
+import { ArrowRight, MailCheck, Scale, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/lib/auth-context";
 import { useApp } from "@/lib/app-context";
-import { ROLE_LABELS, USERS } from "@/lib/data";
-
-const ROLE_BLURBS: Record<string, string> = {
-  consultante: "Registra tu problema jurídico y consulta el estado de tu caso.",
-  administrativo: "Valida clasificaciones, asigna asesores y supervisa la agenda.",
-  asesor: "Revisa casos de tu área, asigna practicantes y programa atención.",
-  practicante: "Atiende casos asignados, registra avances y documentos.",
-};
-
-const LOGIN_USERS = [
-  USERS.find((u) => u.id === "cons-1")!,
-  USERS.find((u) => u.id === "admin-1")!,
-  ...USERS.filter((u) => u.role === "asesor"),
-  USERS.find((u) => u.id === "prac-1")!,
-];
 
 type Mode = "login" | "register";
 
@@ -68,8 +48,16 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!authReady || !appReady) return;
+
     if (configured && firebaseUser && emailVerified && session) {
-      router.replace("/panel");
+      const routes = {
+        administrativo: "/admin",
+        consultante: "/panel",
+        asesor: "/panel",
+        practicante: "/panel",
+      };
+
+      router.replace(routes[session.role]);
     }
   }, [
     authReady,
@@ -110,9 +98,6 @@ export default function HomePage() {
   }
 
   const needsVerification = Boolean(firebaseUser && !emailVerified);
-  const canPickRole = Boolean(
-    (!configured || (firebaseUser && emailVerified)) && !session,
-  );
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[var(--surface)]">
@@ -135,15 +120,16 @@ export default function HomePage() {
           </h1>
 
           <p className="max-w-xl text-lg leading-relaxed text-[var(--muted)] sm:text-xl">
-            Accede con tu correo institucional. Debes confirmar el email antes
-            de entrar al consultorio.
+            Accede con tu correo personal. Debes confirmar el email antes de
+            entrar al consultorio.
           </p>
 
           <div className="animate-rise-delay-2 flex items-start gap-3 border-l-2 border-[var(--teal)] pl-4">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-[var(--accent-gold)]" />
             <p className="text-sm leading-relaxed text-[var(--muted)]">
-              Tras verificar tu cuenta eliges el rol de trabajo (consultante,
-              administrativo, asesor o practicante).
+              Tras verificar tu cuenta accederás automáticamente según los
+              permisos asignados. (consultante, administrativo, asesor o
+              practicante).
             </p>
           </div>
         </section>
@@ -188,18 +174,20 @@ export default function HomePage() {
                 <Button
                   className="bg-[var(--ink)] text-[var(--paper)] hover:bg-[var(--teal)]"
                   disabled={authBusy}
-onClick={async () => {
-  const ok = await reloadUser();
+                  onClick={async () => {
+                    const ok = await reloadUser();
 
-  if (ok) {
-    setInfo("Correo confirmado. Elige tu rol para continuar.");
-    window.location.reload();
-  } else {
-    setInfo(
-      "Aún no aparece confirmado. Revisa el correo y vuelve a intentar.",
-    );
-  }
-}}
+                    if (ok) {
+                      setInfo(
+                        "Correo confirmado. Ya puedes ingresar al consultorio.",
+                      );
+                      window.location.reload();
+                    } else {
+                      setInfo(
+                        "Aún no aparece confirmado. Revisa el correo y vuelve a intentar.",
+                      );
+                    }
+                  }}
                 >
                   Ya confirmé mi correo
                 </Button>
@@ -225,77 +213,6 @@ onClick={async () => {
               >
                 Usar otra cuenta
               </button>
-            </div>
-          ) : canPickRole && emailVerified ? (
-            <div className="space-y-4">
-              <div>
-                <h2 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
-                  Elige tu rol
-                </h2>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  Sesión verificada: {firebaseUser?.email}
-                </p>
-              </div>
-              <ul className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
-                {LOGIN_USERS.map((user) => (
-                  <li key={user.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        loginRole(user.id);
-                        router.push("/panel");
-                      }}
-                      className="group flex w-full items-start justify-between gap-3 rounded-xl border border-transparent bg-[var(--surface)] px-4 py-3 text-left transition-all hover:border-[var(--teal)]/30 hover:bg-[var(--teal-soft)]/50"
-                    >
-                      <div>
-                        <p className="font-medium text-[var(--ink)]">
-                          {ROLE_LABELS[user.role]}
-                        </p>
-                        <p className="text-xs text-[var(--muted)]">{user.name}</p>
-                        <p className="mt-1 text-sm text-[var(--muted)]">
-                          {ROLE_BLURBS[user.role]}
-                        </p>
-                      </div>
-                      <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-[var(--muted)] transition-transform group-hover:translate-x-1 group-hover:text-[var(--teal)]" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <button
-                type="button"
-                className="text-sm text-[var(--muted)] underline-offset-4 hover:text-[var(--teal)] hover:underline"
-                onClick={() => logout()}
-              >
-                Cerrar sesión de correo
-              </button>
-            </div>
-          ) : canPickRole && !configured ? (
-            <div className="space-y-4">
-              <h2 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
-                Modo local (sin Firebase)
-              </h2>
-              <ul className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
-                {LOGIN_USERS.map((user) => (
-                  <li key={user.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        loginRole(user.id);
-                        router.push("/panel");
-                      }}
-                      className="group flex w-full items-start justify-between gap-3 rounded-xl bg-[var(--surface)] px-4 py-3 text-left hover:bg-[var(--teal-soft)]/50"
-                    >
-                      <div>
-                        <p className="font-medium text-[var(--ink)]">
-                          {ROLE_LABELS[user.role]}
-                        </p>
-                        <p className="text-xs text-[var(--muted)]">{user.name}</p>
-                      </div>
-                      <ArrowRight className="mt-1 h-4 w-4 text-[var(--muted)]" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
             </div>
           ) : (
             <div className="space-y-5">
@@ -406,6 +323,13 @@ onClick={async () => {
                       ? "Entrar"
                       : "Registrarme y enviar confirmación"}
                 </Button>
+                <button
+                  type="button"
+                  className="w-full text-sm text-[var(--muted)] underline-offset-4 hover:text-[var(--teal)] hover:underline"
+                  onClick={() => router.push("/activar-cuenta")}
+                >
+                  Activar cuenta autorizada
+                </button>
               </form>
             </div>
           )}

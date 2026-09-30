@@ -2,6 +2,8 @@ import {
   addDoc,
   collection,
   onSnapshot,
+  query,
+  where,
   serverTimestamp,
   type Unsubscribe,
 } from "firebase/firestore";
@@ -37,13 +39,46 @@ export async function createCaseInFirestore(
  * Escucha los casos de Firestore en tiempo real.
  */
 export function subscribeCases(
+  uid: string,
+  role: string,
   onCases: (cases: LegalCase[]) => void,
   onError?: (error: Error) => void,
 ): Unsubscribe {
   const db = getFirebaseDb();
 
-  return onSnapshot(
+let casesQuery;
+
+
+if (role === "asesor") {
+
+  casesQuery = query(
     collection(db, CASES_COLLECTION),
+    where("advisorId", "==", uid)
+  );
+
+} else if (role === "practicante") {
+
+  casesQuery = query(
+    collection(db, CASES_COLLECTION),
+    where("internId", "==", uid)
+  );
+
+} else if (role === "consultante") {
+
+  casesQuery = query(
+    collection(db, CASES_COLLECTION),
+    where("consultanteId", "==", uid)
+  );
+
+} else {
+
+  casesQuery = collection(db, CASES_COLLECTION);
+
+}
+
+
+return onSnapshot(
+  casesQuery,
     (snapshot) => {
       const cases: LegalCase[] = snapshot.docs.map((doc) => {
         const data = doc.data();
