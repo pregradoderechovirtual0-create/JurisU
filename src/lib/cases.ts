@@ -16,11 +16,11 @@ type FirestoreCaseInput = Omit<
   "id" | "createdAt" | "updatedAt"
 >;
 
-/**
+/*/
  * Crea un nuevo caso en Firestore.
  */
 export async function createCaseInFirestore(
-  data: FirestoreCaseInput,
+  data: FirestoreCaseInput, 
 ): Promise<string> {
   const db = getFirebaseDb();
 

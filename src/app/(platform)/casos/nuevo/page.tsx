@@ -24,6 +24,8 @@ export default function NuevoCasoPage() {
   const [Stratum, setStratum] = useState("");
   const [Mode, setMode]= useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [dataConsent, setDataConsent] = useState<"si" | "no" | "">("");
+  const [consentError, setConsentError] = useState<string | null>(null);
 
   const preview = useMemo(() => {
     const text = `${title} ${description}`.trim();
@@ -64,6 +66,7 @@ export default function NuevoCasoPage() {
           automáticamente.
         </p>
       </header>
+
 
       <form
         onSubmit={onSubmit}
@@ -201,7 +204,71 @@ export default function NuevoCasoPage() {
             </p>
           </div>
         )}
+        
+    <div className="space-y-3 rounded-lg border border-[var(--ink)]/10 bg-[var(--surface)] p-4">
+        <p className="text-sm leading-relaxed text-[var(--muted)]">
+          En cumplimiento con la Ley 1581 de 2012 y el Decreto 1377 de 2013, que
+          regulan el tratamiento de datos personales en Colombia, se informa a
+          los usuarios que los datos personales proporcionados a través de este
+          formulario serán tratados de acuerdo con la legislación vigente y con
+          el fin exclusivo de atender y gestionar la consulta jurídica
+          solicitada. Los datos serán recolectados, almacenados, usados y en su
+          caso, transmitidos únicamente para las finalidades previamente
+          informadas, y se adoptarán todas las medidas necesarias para
+          garantizar la seguridad, confidencialidad y derechos de los titulares
+          de la información. El titular de los datos podrá ejercer en cualquier
+          momento sus derechos de acceso, rectificación, cancelación u
+          oposición (ARCO), conforme a lo dispuesto en la normativa colombiana y
+          la política Universitaria de tratamiento de datos personales
+          (Resolución de Rectoría R-072 de 09 de noviembre de 2022).
+          </p>
+          <p className="text-sm text-[var(--muted)]">
+          Acepto que el Consultorio Jurídico Virtual de la USC realice el
+          tratamiento de mis datos personales y{" "}
+          <a
+      href="https://www.calameo.com/universidad-santiago-cali/read/004161322df162ef1344d"
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-[var(--teal)] underline underline-offset-2"
+    >
+      Políticas de tratamiento de Datos
+    </a>
+    .<span className="text-red-600"> *</span>
+  </p>
 
+        <div className="space-y-2">
+          <label className="flex items-center gap-2 text-sm text-[var(--ink)]">
+            <input
+              type="radio"
+              name="dataConsent"
+              required
+              checked={dataConsent === "si"}
+              onChange={() => {
+                setDataConsent("si");
+                setConsentError(null);
+              }}
+            />
+            Sí Acepto
+          </label>
+          <label className="flex items-center gap-2 text-sm text-[var(--ink)]">
+            <input
+              type="radio"
+              name="dataConsent"
+              checked={dataConsent === "no"}
+              onChange={() => {
+                setDataConsent("no");
+                setConsentError(null);
+              }}
+            />
+            No acepto
+          </label>
+        </div>
+
+  {consentError && (
+    <p className="text-sm text-red-600">{consentError}</p>
+  )}
+</div>
+        
         <Button
           type="submit"
           disabled={submitting}

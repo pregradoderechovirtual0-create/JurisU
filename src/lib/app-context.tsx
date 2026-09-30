@@ -166,6 +166,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         consultanteId:
           session?.role === "consultante" ? session.id : "cons-guest",
         consultanteName: input.consultanteName,
+        consultanteDocument: input.consultanteDocument,
+        consultanteAddress: input.consultanteAddress,     
+        consultanteStratum: input.consultanteStratum,     
         consultanteEmail: input.consultanteEmail,
         consultantePhone: input.consultantePhone,
         proposedCategoryId: classification.categoryId,
