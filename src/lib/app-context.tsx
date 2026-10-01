@@ -172,16 +172,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem(STORAGE_KEY);
   }, []);
 
-  const asignarAsesorAutomatico = (categoryId: LegalCategoryId) => {
+  const asignarAsesorAutomatico = (
+    categoryId: LegalCategoryId,
+  ): User | null => {
     const asesores = users.filter(
-      (u) => u.role === "asesor" && u.category === categoryId,
+      (u) =>
+        u.role === "asesor" &&
+        (!u.categoryIds || u.categoryIds.includes(categoryId)),
     );
 
     if (asesores.length === 0) {
       return null;
     }
 
-    return asesores[Math.floor(Math.random() * asesores.length)];
+    const asesoresConCarga = asesores.map((asesor) => {
+      const casosActivos = cases.filter(
+        (caso) => caso.advisorId === asesor.id && caso.status !== "cerrado",
+      ).length;
+
+      return {
+        asesor,
+        casosActivos,
+      };
+    });
+
+    asesoresConCarga.sort((a, b) => a.casosActivos - b.casosActivos);
+
+    return asesoresConCarga[0].asesor;
   };
 
   const asignarPracticanteAutomatico = () => {
@@ -206,8 +223,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const asesor = asignarAsesorAutomatico(classification.categoryId);
 
-      const practicante = asignarPracticanteAutomatico();
-
       const legalCase: Omit<LegalCase, "id" | "createdAt" | "updatedAt"> = {
         folio: nextFolio(cases.length + 20),
 
@@ -222,7 +237,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         consultantePhone: input.consultantePhone,
 
         proposedCategoryId: classification.categoryId,
-
         confirmedCategoryId: classification.categoryId,
 
         classificationConfidence: classification.confidence,
@@ -232,12 +246,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         advisorId: asesor?.id,
         advisorName: asesor?.name,
 
-        internId: practicante?.id,
-        internName: practicante?.name,
-
         status: asesor ? "asignado_asesor" : "pendiente_validacion",
+
         notes: [],
       };
+
       const id = await createCaseInFirestore(legalCase);
 
       return {
@@ -247,7 +260,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
     },
-    [cases.length, session],
+    [cases, users, session],
   );
 
   const validateCase = useCallback(
