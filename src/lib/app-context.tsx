@@ -1,4 +1,5 @@
 "use client";
+
 import {
   createContext,
   useCallback,
@@ -8,22 +9,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { classifyCase, nextFolio } from "./classify";
-
-import { obtenerUsuario } from "./users/users.service";
-
+import { classifyCase } from "./classify";
 import { createCaseInFirestore, subscribeCases } from "./cases";
-
+import {
+  addNoteInFirestore,
+  assignInternInFirestore,
+  updateStatusInFirestore,
+  validateCaseInFirestore,
+} from "./case-actions";
 import {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
 } from "firebase/auth";
-
 import { getFirebaseAuth } from "./firebase";
-
-import { CATEGORIES, SEED_APPOINTMENTS } from "./data";
-import { obtenerUsuariosAutorizados } from "./users/users.service";
+import { escucharUsuarios, obtenerUsuario } from "./users/users.service";
+import { CATEGORIES } from "./data";
 import type {
   Appointment,
   CaseStatus,
@@ -33,12 +34,41 @@ import type {
   User,
 } from "./types";
 
-const STORAGE_KEY = "jurisu-consultorio-v1";
+const VALID_ROLES = [
+  "consultante",
+  "administrativo",
+  "asesor",
+  "practicante",
+] as const;
 
-interface PersistedState {
-  cases: LegalCase[];
-  appointments: Appointment[];
-  session: SessionUser | null;
+// La cita se guarda dentro del documento del caso
+type CaseWithAppointment = LegalCase & { appointment?: Appointment };
+
+// Lee rol y nombre reales del usuario desde Firestore (colección "users")
+async function fetchProfile(
+  uid: string,
+): Promise<{ role: SessionUser["role"]; name?: string }> {
+  try {
+    const user = await obtenerUsuario(uid);
+    const role = user?.role as string | undefined;
+    return {
+      role:
+        role && (VALID_ROLES as readonly string[]).includes(role)
+          ? (role as SessionUser["role"])
+          : "consultante",
+      name: user?.name,
+    };
+  } catch (error) {
+    console.error("Error leyendo perfil:", error);
+    return { role: "consultante" };
+  }
+}
+
+// Folio único sin depender de cuántos casos puede ver el usuario
+function makeFolio() {
+  const year = new Date().getFullYear();
+  const rand = crypto.randomUUID().replace(/-/g, "").slice(0, 5).toUpperCase();
+  return `CJ-${year}-${rand}`;
 }
 
 interface CreateCaseInput {
@@ -55,6 +85,7 @@ interface CreateCaseInput {
 interface AppContextValue {
   ready: boolean;
   session: SessionUser | null;
+  cases: LegalCase[];
   appointments: Appointment[];
   users: User[];
   categories: typeof CATEGORIES;
@@ -69,7 +100,7 @@ interface AppContextValue {
   assignIntern: (
     caseId: string,
     internId: string,
-    appointment: Omit<Appointment, "id" | "caseId" | "status">,
+    appointment?: Omit<Appointment, "id" | "caseId" | "status">,
   ) => void;
   addNote: (caseId: string, content: string) => void;
   updateStatus: (caseId: string, status: CaseStatus) => void;
@@ -83,93 +114,90 @@ const AppContext = createContext<AppContextValue | null>(null);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [cases, setCases] = useState<LegalCase[]>([]);
-  const [appointments, setAppointments] =
-    useState<Appointment[]>(SEED_APPOINTMENTS);
-  const [session, setSession] = useState<SessionUser | null>(null);
   const [users, setUsers] = useState<User[]>([]);
+  const [session, setSession] = useState<SessionUser | null>(null);
 
+  const sessionId = session?.id;
+  const sessionRole = session?.role;
+  const sessionEmail = session?.email;
+
+  // 1. Autenticación
   useEffect(() => {
     const auth = getFirebaseAuth();
 
     const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        const userData = await obtenerUsuario(user.uid);
-
+        // Refresca el token para que traiga email_verified actualizado
+        await user.getIdToken(true);
+        const profile = await fetchProfile(user.uid);
         setSession({
           id: user.uid,
-          name: userData?.name || "Usuario",
+          name: profile.name || user.displayName || "Usuario",
           email: user.email || "",
-          role: userData?.role || "consultante",
+          role: profile.role,
         });
       } else {
         setSession(null);
       }
-
       setReady(true);
     });
 
-    return () => {
-      unsubscribeAuth();
-    };
+    return () => unsubscribeAuth();
   }, []);
 
+  // 2. Casos: cada rol escucha solo lo que le corresponde
   useEffect(() => {
-    if (!session) return;
-
-    async function loadUsers() {
-      const usuarios = await obtenerUsuariosAutorizados();
-
-      setUsers(usuarios);
+    if (!sessionId || !sessionRole) {
+      setCases([]);
+      return;
     }
-
-    loadUsers();
-  }, [session]);
-
-  useEffect(() => {
-    if (!session) return;
-
-    const unsubscribeCases = subscribeCases(
-      session.id,
-      session.role,
-      (firebaseCases) => {
-        setCases(firebaseCases);
-      },
-      (error) => {
-        console.error("Error cargando casos:", error);
-      },
+    return subscribeCases(
+      { id: sessionId, email: sessionEmail ?? "", role: sessionRole },
+      setCases,
+      (error) => console.error("Error cargando casos:", error),
     );
+  }, [sessionId, sessionRole, sessionEmail]);
 
-    return () => {
-      unsubscribeCases();
-    };
-  }, [session]);
-
+  // 3. Usuarios reales (asesores y practicantes), solo para quien los necesita
   useEffect(() => {
-    if (!ready) return;
+    if (
+      !sessionId ||
+      (sessionRole !== "administrativo" && sessionRole !== "asesor")
+    ) {
+      setUsers([]);
+      return;
+    }
+    return escucharUsuarios(setUsers, (error) =>
+      console.error("Error cargando usuarios:", error),
+    );
+  }, [sessionId, sessionRole]);
 
-    const payload: PersistedState = {
-      cases,
-      appointments,
-      session,
-    };
-
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }, [ready, appointments, session]);
+  // Las citas viven dentro de cada caso
+  const appointments = useMemo(
+    () =>
+      (cases as CaseWithAppointment[]).flatMap((c) =>
+        c.appointment ? [c.appointment] : [],
+      ),
+    [cases],
+  );
 
   const login = useCallback(async (email: string, password: string) => {
     const auth = getFirebaseAuth();
+    const credential = await signInWithEmailAndPassword(auth, email, password);
+    const user = credential.user;
+    const profile = await fetchProfile(user.uid);
 
-    await signInWithEmailAndPassword(auth, email, password);
+    setSession({
+      id: user.uid,
+      name: profile.name || user.displayName || "Usuario",
+      email: user.email || email,
+      role: profile.role,
+    });
   }, []);
 
   const logout = useCallback(async () => {
-    const auth = getFirebaseAuth();
-
-    await signOut(auth);
-
+    await signOut(getFirebaseAuth());
     setSession(null);
-
-    localStorage.removeItem(STORAGE_KEY);
   }, []);
 
   const asignarAsesorAutomatico = (
@@ -201,20 +229,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return asesoresConCarga[0].asesor;
   };
 
-  const asignarPracticanteAutomatico = () => {
-    const practicantes = users
-      .filter((u) => u.role === "practicante")
-      .filter((u) => (u.activeCases ?? 0) < 10);
-
-    if (practicantes.length === 0) {
-      return null;
-    }
-
-    return practicantes.sort(
-      (a, b) => (a.activeCases ?? 0) - (b.activeCases ?? 0),
-    )[0];
-  };
-
   const createCase = useCallback(
     async (input: CreateCaseInput): Promise<LegalCase> => {
       const classification = classifyCase(
@@ -224,8 +238,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const asesor = asignarAsesorAutomatico(classification.categoryId);
 
       const legalCase: Omit<LegalCase, "id" | "createdAt" | "updatedAt"> = {
-        folio: nextFolio(cases.length + 20),
-
+        folio: makeFolio(),
         title: input.title,
         description: input.description,
 
@@ -233,7 +246,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           session?.role === "consultante" ? session.id : "cons-guest",
 
         consultanteName: input.consultanteName,
-        consultanteEmail: input.consultanteEmail,
+        consultanteDocument: input.consultanteDocument,
+        consultanteAddress: input.consultanteAddress,
+        consultanteStratum: input.consultanteStratum,
+        consultanteEmail: input.consultanteEmail.trim().toLowerCase(),
         consultantePhone: input.consultantePhone,
 
         proposedCategoryId: classification.categoryId,
@@ -260,26 +276,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         updatedAt: new Date().toISOString(),
       };
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [cases, users, session],
   );
 
   const validateCase = useCallback(
     (caseId: string, categoryId: LegalCategoryId, advisorId: string) => {
       const advisor = users.find((u) => u.id === advisorId);
-      setCases((prev) =>
-        prev.map((c) =>
-          c.id === caseId
-            ? {
-                ...c,
-                confirmedCategoryId: categoryId,
-                advisorId,
-                advisorName: advisor?.name,
-                status: "asignado_asesor" as CaseStatus,
-                updatedAt: new Date().toISOString(),
-              }
-            : c,
-        ),
-      );
+      validateCaseInFirestore(
+        caseId,
+        categoryId,
+        advisorId,
+        advisor?.name,
+      ).catch((e) => console.error("Error validando caso:", e));
     },
     [users],
   );
@@ -288,33 +297,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (
       caseId: string,
       internId: string,
-      appointment: Omit<Appointment, "id" | "caseId" | "status">,
+      appointment?: Omit<Appointment, "id" | "caseId" | "status">,
     ) => {
       const intern = users.find((u) => u.id === internId);
-      const aptId = `apt-${crypto.randomUUID().slice(0, 8)}`;
-      setAppointments((prev) => [
-        {
-          id: aptId,
-          caseId,
-          status: "programada",
-          ...appointment,
-        },
-        ...prev,
-      ]);
-      setCases((prev) =>
-        prev.map((c) =>
-          c.id === caseId
-            ? {
-                ...c,
-                internId,
-                internName: intern?.name,
-                appointmentId: aptId,
-                status: "en_atencion" as CaseStatus,
-                updatedAt: new Date().toISOString(),
-              }
-            : c,
-        ),
-      );
+      const fullAppointment: Appointment | null = appointment
+        ? {
+            id: `apt-${crypto.randomUUID().slice(0, 8)}`,
+            caseId,
+            status: "programada",
+            ...appointment,
+          }
+        : null;
+      assignInternInFirestore(
+        caseId,
+        internId,
+        intern?.name,
+        fullAppointment,
+      ).catch((e) => console.error("Error asignando practicante:", e));
     },
     [users],
   );
@@ -322,37 +321,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addNote = useCallback(
     (caseId: string, content: string) => {
       if (!session) return;
-      setCases((prev) =>
-        prev.map((c) =>
-          c.id === caseId
-            ? {
-                ...c,
-                notes: [
-                  {
-                    id: `note-${crypto.randomUUID().slice(0, 8)}`,
-                    authorId: session.id,
-                    authorName: session.name,
-                    content,
-                    createdAt: new Date().toISOString(),
-                  },
-                  ...c.notes,
-                ],
-                updatedAt: new Date().toISOString(),
-              }
-            : c,
-        ),
-      );
+      addNoteInFirestore(caseId, {
+        id: `note-${crypto.randomUUID().slice(0, 8)}`,
+        authorId: session.id,
+        authorName: session.name,
+        content,
+        createdAt: new Date().toISOString(),
+      }).catch((e) => console.error("Error guardando nota:", e));
     },
     [session],
   );
 
   const updateStatus = useCallback((caseId: string, status: CaseStatus) => {
-    setCases((prev) =>
-      prev.map((c) =>
-        c.id === caseId
-          ? { ...c, status, updatedAt: new Date().toISOString() }
-          : c,
-      ),
+    updateStatusInFirestore(caseId, status).catch((e) =>
+      console.error("Error actualizando estado:", e),
     );
   }, []);
 
@@ -368,12 +350,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const visibleCases = useMemo(() => {
     if (!session) return [];
+    const myEmail = session.email.toLowerCase();
     switch (session.role) {
       case "consultante":
         return cases.filter(
           (c) =>
             c.consultanteId === session.id ||
-            c.consultanteEmail === session.email,
+            c.consultanteEmail?.toLowerCase() === myEmail,
         );
       case "asesor":
         return cases.filter((c) => c.advisorId === session.id);

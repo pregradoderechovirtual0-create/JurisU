@@ -17,8 +17,6 @@ const selectClassName =
 const outlineBtn =
   "inline-flex h-9 items-center justify-center rounded-lg border border-[var(--ink)]/15 bg-[var(--paper)] px-3 text-sm font-medium text-[var(--ink)] transition-colors hover:bg-[var(--surface)]";
 
-
-
 export default function CasoDetallePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -53,7 +51,8 @@ export default function CasoDetallePage() {
     if (!legalCase) return undefined;
     return CATEGORIES.find(
       (c) =>
-        c.id === (legalCase.confirmedCategoryId ?? legalCase.proposedCategoryId),
+        c.id ===
+        (legalCase.confirmedCategoryId ?? legalCase.proposedCategoryId),
     );
   }, [legalCase]);
 
@@ -76,36 +75,50 @@ export default function CasoDetallePage() {
     );
   }
 
-  const effectiveCategory =
-    (categoryId ||
-      legalCase.confirmedCategoryId ||
-      legalCase.proposedCategoryId) as LegalCategoryId;
+  const effectiveCategory = (categoryId ||
+    legalCase.confirmedCategoryId ||
+    legalCase.proposedCategoryId) as LegalCategoryId;
+
+  // Sin categorías marcadas = atiende todas
+  const handlesCategory = (ids?: string[]) =>
+    !ids || ids.length === 0 || ids.includes(effectiveCategory);
 
   const advisors = users.filter(
-    (u) =>
-      u.role === "asesor" &&
-      (!u.categoryIds || u.categoryIds.includes(effectiveCategory)),
+    (u) => u.role === "asesor" && handlesCategory(u.categoryIds),
   );
-  const interns = users.filter(
-    (u) =>
-      u.role === "practicante" &&
-      (!u.categoryIds || u.categoryIds.includes(effectiveCategory)),
-  );
+
+  // Todos los practicantes; los de la categoría del caso van primero
+  const interns = users
+    .filter((u) => u.role === "practicante")
+    .sort(
+      (a, b) =>
+        Number(!!b.categoryIds?.includes(effectiveCategory)) -
+        Number(!!a.categoryIds?.includes(effectiveCategory)),
+    );
+
+  const isStaff =
+    session.role === "asesor" || session.role === "administrativo";
+  // El practicante solo actúa sobre los casos que le asignaron
+  const isMyCase =
+    session.role === "practicante" && legalCase.internId === session.id;
 
   const canValidate =
     session.role === "administrativo" &&
     legalCase.status === "pendiente_validacion";
   const canAssignIntern =
-    (session.role === "asesor" || session.role === "administrativo") &&
-    ["asignado_asesor", "en_atencion"].includes(legalCase.status) &&
-    !legalCase.internId;
-  const canNote =
-    session.role === "practicante" ||
-    session.role === "asesor" ||
-    session.role === "administrativo";
-  const canClose =
-    (session.role === "asesor" || session.role === "administrativo") &&
-    legalCase.status !== "cerrado";
+    isStaff &&
+    ["asignado_asesor", "en_atencion", "seguimiento"].includes(
+      legalCase.status,
+    );
+  const canNote = isStaff || isMyCase;
+  // El practicante puede pasar a seguimiento, pero no cerrar
+  const canFollowUp =
+    legalCase.status === "en_atencion" && (isStaff || isMyCase);
+  const canClose = isStaff && legalCase.status !== "cerrado";
+
+  const notes = [...(legalCase.notes ?? [])].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
 
   return (
     <div className="space-y-6">
@@ -148,9 +161,8 @@ export default function CasoDetallePage() {
               {category?.name}
             </p>
             <p className="mt-1 text-sm text-[var(--muted)]">
-              Confianza{" "}
-              {Math.round(legalCase.classificationConfidence * 100)}% —{" "}
-              {legalCase.classificationRationale}
+              Confianza {Math.round(legalCase.classificationConfidence * 100)}%
+              — {legalCase.classificationRationale}
             </p>
             {legalCase.confirmedCategoryId && (
               <p className="mt-2 text-xs text-[var(--teal)]">
@@ -163,13 +175,13 @@ export default function CasoDetallePage() {
             <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
               Avances
             </h2>
-            {legalCase.notes.length === 0 ? (
+            {notes.length === 0 ? (
               <p className="mt-3 text-sm text-[var(--muted)]">
                 Aún no hay notas de seguimiento.
               </p>
             ) : (
               <ul className="mt-3 space-y-3">
-                {legalCase.notes.map((n) => (
+                {notes.map((n) => (
                   <li
                     key={n.id}
                     className="border-l-2 border-[var(--teal)]/40 pl-3"
@@ -224,6 +236,20 @@ export default function CasoDetallePage() {
                   {legalCase.consultanteName}
                   <br />
                   <span className="text-xs">{legalCase.consultanteEmail}</span>
+                  {session.role !== "consultante" && (
+                    <>
+                      <br />
+                      <span className="text-xs">
+                        Doc. {legalCase.consultanteDocument} ·{" "}
+                        {legalCase.consultantePhone}
+                      </span>
+                      <br />
+                      <span className="text-xs">
+                        {legalCase.consultanteAddress} · Estrato{" "}
+                        {legalCase.consultanteStratum}
+                      </span>
+                    </>
+                  )}
                 </dd>
               </div>
               <div>
@@ -317,8 +343,16 @@ export default function CasoDetallePage() {
           {canAssignIntern && (
             <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/80 p-5">
               <h2 className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
-                Asignar practicante y cita
+                {legalCase.internId
+                  ? "Reasignar practicante"
+                  : "Enviar a practicante"}
               </h2>
+              {legalCase.internName && (
+                <p className="text-xs text-[var(--muted)]">
+                  Actualmente: {legalCase.internName}
+                </p>
+              )}
+
               <div className="space-y-2">
                 <Label htmlFor="assign-intern">Practicante</Label>
                 <select
@@ -330,11 +364,24 @@ export default function CasoDetallePage() {
                   <option value="">Seleccionar</option>
                   {interns.map((i) => (
                     <option key={i.id} value={i.id}>
-                      {i.name} ({i.activeCases ?? 0} casos)
+                      {i.name}
+                      {i.categoryIds?.includes(effectiveCategory)
+                        ? " · recomendado"
+                        : ""}
                     </option>
                   ))}
                 </select>
+                {interns.length === 0 && (
+                  <p className="text-xs text-[var(--muted)]">
+                    No hay practicantes registrados. Cambia el rol de un
+                    usuario a &quot;practicante&quot; en Firestore.
+                  </p>
+                )}
               </div>
+
+              <p className="text-xs text-[var(--muted)]">
+                La cita es opcional: déjala en blanco si la programas después.
+              </p>
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-2">
                   <Label htmlFor="assign-date">Fecha</Label>
@@ -343,7 +390,6 @@ export default function CasoDetallePage() {
                     type="date"
                     value={date}
                     onChange={(e) => setDate(e.target.value)}
-                    required
                   />
                 </div>
                 <div className="space-y-2">
@@ -379,24 +425,26 @@ export default function CasoDetallePage() {
               <button
                 type="button"
                 className="inline-flex h-9 w-full items-center justify-center rounded-lg bg-[var(--ink)] px-3 text-sm font-medium text-[var(--paper)] transition-colors hover:bg-[var(--teal)] disabled:opacity-50"
-                disabled={!internId || !date}
+                disabled={!internId}
                 onClick={() => {
-                  assignIntern(legalCase.id, internId, {
-                    date,
-                    time,
-                    mode,
-                    locationOrLink: location,
-                  });
+                  assignIntern(
+                    legalCase.id,
+                    internId,
+                    date
+                      ? { date, time, mode, locationOrLink: location }
+                      : undefined,
+                  );
+                  setInternId("");
                 }}
               >
-                Programar atención
+                {legalCase.internId ? "Reasignar" : "Enviar al practicante"}
               </button>
             </div>
           )}
 
-          {canClose && (
+          {(canFollowUp || canClose) && (
             <div className="flex flex-wrap gap-2">
-              {legalCase.status === "en_atencion" && (
+              {canFollowUp && (
                 <button
                   type="button"
                   className={outlineBtn}
@@ -405,13 +453,15 @@ export default function CasoDetallePage() {
                   Pasar a seguimiento
                 </button>
               )}
-              <button
-                type="button"
-                className={outlineBtn}
-                onClick={() => updateStatus(legalCase.id, "cerrado")}
-              >
-                Cerrar caso
-              </button>
+              {canClose && (
+                <button
+                  type="button"
+                  className={outlineBtn}
+                  onClick={() => updateStatus(legalCase.id, "cerrado")}
+                >
+                  Cerrar caso
+                </button>
+              )}
             </div>
           )}
 

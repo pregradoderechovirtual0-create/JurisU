@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect } from "react";
-
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -21,14 +20,13 @@ import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 
-const NAV = [
-  { href: "/panel", label: "Panel", icon: LayoutDashboard },
-  { href: "/casos", label: "Casos", icon: Briefcase },
-  { href: "/casos/nuevo", label: "Nueva solicitud", icon: PlusCircle },
-  { href: "/agenda", label: "Agenda", icon: CalendarDays },
-  { href: "/categorias", label: "Categorías", icon: Tags },
-  { href: "/admin/usuarios", label: "Usuarios", icon: Users },
-];
+// Pantalla de inicio de cada rol
+const ROLE_HOME: Record<string, string> = {
+  administrativo: "/admin",
+  consultante: "/panel",
+  asesor: "/asesor",
+  practicante: "/practicante",
+};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -42,37 +40,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     logout: logoutAuth,
   } = useAuth();
 
+  const mustRedirect =
+    ready &&
+    authReady &&
+    ((configured && (!firebaseUser || !emailVerified)) || !session);
+
+  // Sin sesión válida, volver al inicio
   useEffect(() => {
-    if (!ready || !authReady) return;
+    if (mustRedirect) router.replace("/");
+  }, [mustRedirect, router]);
 
-    if (configured && (!firebaseUser || !emailVerified)) {
-      router.replace("/");
-    }
-
-    if (!session) {
-      router.replace("/");
-    }
-  }, [
-    ready,
-    authReady,
-    configured,
-    firebaseUser,
-    emailVerified,
-    session,
-    router,
-  ]);
-
+  // Cada rol entra a su propio panel
   useEffect(() => {
     if (!session) return;
 
-    const roleHome = {
-      administrativo: "/admin",
-      consultante: "/panel",
-      asesor: "/asesor",
-      practicante: "/practicante",
-    };
-
-    const home = roleHome[session.role];
+    const home = ROLE_HOME[session.role] ?? "/panel";
 
     if (pathname === "/panel" && home !== "/panel") {
       router.replace(home);
@@ -89,9 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!session) {
-    return null;
-  }
+  if (mustRedirect || !session) return null;
 
   if (session.role === "administrativo" && pathname === "/panel") {
     return (
@@ -104,7 +84,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   async function handleLogout() {
-    logout();
+    await logout();
     if (configured) await logoutAuth();
     router.push("/");
   }
@@ -124,6 +104,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           { href: "/agenda", label: "Agenda", icon: CalendarDays },
           { href: "/categorias", label: "Categorías", icon: Tags },
           { href: "/admin/usuarios", label: "Usuarios", icon: Users },
+          { href: "/equipo", label: "Equipo", icon: Users },
         ];
 
       case "asesor":
@@ -131,6 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           { href: "/asesor", label: "Panel", icon: LayoutDashboard },
           { href: "/casos", label: "Casos", icon: Briefcase },
           { href: "/agenda", label: "Agenda", icon: CalendarDays },
+          { href: "/equipo", label: "Equipo", icon: Users },
         ];
 
       case "practicante":
@@ -168,7 +150,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header className="border-b border-[var(--ink)]/10 bg-[var(--paper)]/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
           <Link
-            href={session.role === "administrativo" ? "/admin" : "/panel"}
+            href={ROLE_HOME[session.role] ?? "/panel"}
             className="group flex items-center gap-2.5"
           >
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ink)] text-[var(--paper)] transition-transform duration-300 group-hover:scale-105">
@@ -218,10 +200,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
             {navItems.map((item) => {
               const active =
-                pathname === item.href ||
-                (item.href !== "/panel" &&
-                  item.href !== "/casos/nuevo" &&
-                  pathname.startsWith(item.href));
+                item.href === "/casos"
+                  ? pathname === "/casos" ||
+                    (pathname.startsWith("/casos/") &&
+                      pathname !== "/casos/nuevo")
+                  : pathname === item.href;
               const Icon = item.icon;
               return (
                 <Link
@@ -240,17 +223,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <button
-            type="button"
-            onClick={() => {
-              logout();
-              router.push("/");
-            }}
-            className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ink)]/70 transition-colors hover:bg-[var(--ink)]/5 hover:text-[var(--ink)]"
-          >
-            <LogOut className="h-4 w-4" />
-            Cambiar de rol
-          </button>
           <Separator className="my-4 hidden lg:block" />
           <p className="hidden text-xs leading-relaxed text-[var(--muted)] lg:block">
             Flujo: registro → clasificación → validación → asesor → practicante
