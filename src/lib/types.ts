@@ -45,6 +45,7 @@ export interface Appointment {
   date: string;
   time: string;
   mode: AppointmentMode;
+  notes?: string;
   locationOrLink: string;
   status: "programada" | "realizada" | "reprogramada" | "cancelada";
 }
@@ -63,11 +64,11 @@ export interface LegalCase {
   title: string;
   description: string;
   consultanteId: string;
-  consultanteDocument: string;
+  consultanteDocument?: string;
   consultanteName: string;
   consultanteEmail: string;
-  consultanteAddress: string;
-  consultanteStratum: string;
+  consultanteAddress?: string;
+  consultanteStratum?: string;
   consultantePhone: string;
   proposedCategoryId: LegalCategoryId;
   confirmedCategoryId?: LegalCategoryId;

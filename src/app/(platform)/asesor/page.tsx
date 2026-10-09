@@ -55,17 +55,20 @@ export default function AsesorPage() {
                 <div className="border-t pt-4 space-y-3">
                   <select
                     className="border rounded p-2 w-full"
+                    value=""
+                    disabled={practicantes.length === 0}
                     onChange={(e) => {
                       if (!e.target.value) return;
 
-                      assignIntern(caso.id, e.target.value, {
-                        date: "",
-                        time: "",
-                        notes: "",
-                      });
+                      // Sin cita: la agenda se programa aparte
+                      assignIntern(caso.id, e.target.value);
                     }}
                   >
-                    <option>Asignar practicante</option>
+                    <option value="">
+                      {practicantes.length === 0
+                        ? "No hay practicantes disponibles"
+                        : "Asignar practicante"}
+                    </option>
 
                     {practicantes.map((p) => (
                       <option key={p.id} value={p.id}>
