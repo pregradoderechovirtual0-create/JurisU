@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  updateDoc,
   type Unsubscribe,
 } from "firebase/firestore";
 
@@ -37,9 +38,7 @@ export function escucharUsuarios(
 export async function obtenerUsuario(uid: string): Promise<User | null> {
   const db = getFirebaseDb();
 
-  const snapshot = await getDoc(
-    doc(db, USERS_COLLECTION, uid),
-  );
+  const snapshot = await getDoc(doc(db, USERS_COLLECTION, uid));
 
   if (!snapshot.exists()) {
     return null;
@@ -49,4 +48,15 @@ export async function obtenerUsuario(uid: string): Promise<User | null> {
     id: snapshot.id,
     ...snapshot.data(),
   } as User;
+}
+
+/**
+ * Guarda las categorías (familia, penal, etc.) que atiende un asesor o practicante.
+ */
+export async function actualizarCategoriasUsuario(
+  uid: string,
+  categoryIds: string[],
+): Promise<void> {
+  const db = getFirebaseDb();
+  await updateDoc(doc(db, USERS_COLLECTION, uid), { categoryIds });
 }

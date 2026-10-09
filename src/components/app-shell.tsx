@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -10,6 +11,7 @@ import {
   PlusCircle,
   Scale,
   Tags,
+  Users,
 } from "lucide-react";
 import { useApp } from "@/lib/app-context";
 import { useAuth } from "@/lib/auth-context";
@@ -24,6 +26,7 @@ const NAV = [
   { href: "/casos/nuevo", label: "Nueva solicitud", icon: PlusCircle },
   { href: "/agenda", label: "Agenda", icon: CalendarDays },
   { href: "/categorias", label: "Categorías", icon: Tags },
+  { href: "/equipo", label: "Equipo", icon: Users },
 ];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,6 +41,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     logout: logoutAuth,
   } = useAuth();
 
+  const mustRedirect =
+    ready &&
+    authReady &&
+    ((configured && (!firebaseUser || !emailVerified)) || !session);
+
+  useEffect(() => {
+    if (mustRedirect) router.replace("/");
+  }, [mustRedirect, router]);
+
   if (!ready || !authReady) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[var(--surface)]">
@@ -48,18 +60,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (configured && (!firebaseUser || !emailVerified)) {
-    router.replace("/");
-    return null;
-  }
-
-  if (!session) {
-    router.replace("/");
-    return null;
-  }
+  if (mustRedirect || !session) return null;
 
   async function handleLogout() {
-    logout();
+    await logout();
     if (configured) await logoutAuth();
     router.push("/");
   }
@@ -79,6 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (session.role === "practicante") {
       return ["Panel", "Casos", "Agenda"].includes(item.label);
     }
+    // asesor y administrativo ven todo, incluido Equipo
     return true;
   });
 
@@ -146,10 +151,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <nav className="flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible lg:pb-0">
             {navItems.map((item) => {
               const active =
-                pathname === item.href ||
-                (item.href !== "/panel" &&
-                  item.href !== "/casos/nuevo" &&
-                  pathname.startsWith(item.href));
+                item.href === "/casos"
+                  ? pathname === "/casos" ||
+                    (pathname.startsWith("/casos/") &&
+                      pathname !== "/casos/nuevo")
+                  : pathname === item.href;
               const Icon = item.icon;
               return (
                 <Link
@@ -168,17 +174,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               );
             })}
           </nav>
-          <button
-            type="button"
-            onClick={() => {
-              logout();
-              router.push("/");
-            }}
-            className="mt-3 flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-[var(--ink)]/70 transition-colors hover:bg-[var(--ink)]/5 hover:text-[var(--ink)]"
-          >
-            <LogOut className="h-4 w-4" />
-            Cambiar de rol
-          </button>
           <Separator className="my-4 hidden lg:block" />
           <p className="hidden text-xs leading-relaxed text-[var(--muted)] lg:block">
             Flujo: registro → clasificación → validación → asesor →
