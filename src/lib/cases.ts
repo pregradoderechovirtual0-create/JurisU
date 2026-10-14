@@ -32,8 +32,20 @@ export async function createCaseInFirestore(
 ): Promise<string> {
   const db = getFirebaseDb();
 
+  // Firestore no acepta valores undefined. Además, la regla de creación exige
+  // que advisorId e internId no existan en un caso nuevo (ni siquiera como null).
+  const clean = Object.fromEntries(
+    Object.entries(data).filter(([key, value]) => {
+      if (value === undefined) return false;
+      if ((key === "advisorId" || key === "internId") && value === null) {
+        return false;
+      }
+      return true;
+    }),
+  );
+
   const docRef = await addDoc(collection(db, CASES_COLLECTION), {
-    ...data,
+    ...clean,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   });

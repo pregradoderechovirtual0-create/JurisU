@@ -69,10 +69,12 @@ export function CaseForm() {
       } else {
         setSentId(created.id);
       }
-    } catch {
-      setSubmitError("No se pudo registrar la solicitud. Inténtalo de nuevo.");
-    } finally {
-      setSubmitting(false);
+      } catch (err) {
+          console.error("Error registrando solicitud:", err);
+          const code = (err as { code?: string })?.code;
+          setSubmitError(
+          `No se pudo registrar la solicitud${code ? ` (${code})` : ""}. Inténtalo de nuevo.`,
+      );
     }
   }
 
