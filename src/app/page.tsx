@@ -17,6 +17,7 @@ function getPasswordStrength(pw: string) {
   if (pw.length < 6) return { level: 1, label: "Muy corta" };
 
   let points = 0;
+
   if (pw.length >= 8) points++;
   if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) points++;
   if (/\d/.test(pw)) points++;
@@ -24,10 +25,11 @@ function getPasswordStrength(pw: string) {
 
   if (points <= 1) return { level: 1, label: "Débil" };
   if (points === 2) return { level: 2, label: "Media" };
+
   return { level: 3, label: "Fuerte" };
 }
 
-// A dónde entra cada rol después de iniciar sesión
+// Ruta de entrada según el rol del usuario.
 const ROLE_ROUTES: Record<string, string> = {
   administrativo: "/admin",
   consultante: "/panel",
@@ -37,6 +39,7 @@ const ROLE_ROUTES: Record<string, string> = {
 
 export default function HomePage() {
   const router = useRouter();
+
   const {
     ready,
     firebaseUser,
@@ -50,6 +53,7 @@ export default function HomePage() {
     resendVerification,
     reloadUser,
   } = useAuth();
+
   const { ready: appReady, session } = useApp();
 
   const [tab, setTab] = useState<"login" | "register">("login");
@@ -68,7 +72,7 @@ export default function HomePage() {
   const strength = getPasswordStrength(password);
   const errorMessage = formError ?? authError;
 
-  // Si hay sesión verificada, entrar directo al panel que corresponde al rol
+  // Redirige al usuario autenticado según su rol.
   useEffect(() => {
     if (!ready || !appReady) return;
 
@@ -89,6 +93,7 @@ export default function HomePage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
+
     setFormError(null);
     setResetSent(false);
 
@@ -104,7 +109,7 @@ export default function HomePage() {
         await register({ name, email, password });
       }
     } catch {
-      // el error ya se muestra con authError
+      // El error se muestra mediante authError.
     }
   }
 
@@ -116,47 +121,59 @@ export default function HomePage() {
       setFormError("Escribe tu correo y vuelve a presionar el enlace.");
       return;
     }
+
     setFormError(null);
 
     try {
       await sendPasswordResetEmail(getFirebaseAuth(), email.trim());
     } catch {
-      // no revelamos si el correo existe o no
+      // No revelamos si el correo existe o no.
     }
+
     setResetSent(true);
   }
 
   async function onCheckVerified() {
     const ok = await reloadUser();
-    // Recarga para que la sesión se arme con el rol y la redirección lo lleve a su panel
-    if (ok) window.location.reload();
+
+    if (ok) {
+      window.location.reload();
+    }
   }
 
   function goToAuth(target: "login" | "register") {
     changeTab(target);
-    document
-      .getElementById("acceso")
-      ?.scrollIntoView({ behavior: "smooth", block: "start" });
+
+    document.getElementById("acceso")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
   }
 
-  // Evita ver la página pública mientras carga o redirige
+  // Evita mostrar la página mientras carga o redirige.
   if (!ready || loggedIn) return null;
 
   return (
     <div className="min-h-screen bg-[var(--surface)]">
+      {/* ENCABEZADO */}
       <header className="border-b border-[var(--ink)]/10 bg-[var(--paper)]">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center gap-2">
             <span className="flex h-9 w-9 items-center justify-center rounded-lg bg-[var(--ink)] text-[var(--paper)]">
               <Scale className="h-5 w-5" />
             </span>
+
             <div className="leading-tight">
               <p className="font-[family-name:var(--font-display)] text-lg text-[var(--ink)]">
                 JurisU
               </p>
-              <p className="text-xs text-[var(--muted)]">Consultorio Jurídico</p>
+
+              <p className="text-xs text-[var(--muted)]">
+                Consultorio Jurídico
+              </p>
             </div>
           </div>
+
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
@@ -165,6 +182,7 @@ export default function HomePage() {
             >
               Registrarse
             </Button>
+
             <Button
               onClick={() => goToAuth("login")}
               className="bg-[var(--ink)] text-[var(--paper)] hover:bg-[var(--teal)]"
@@ -175,35 +193,43 @@ export default function HomePage() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-2xl space-y-12 px-4 py-10">
-        {/* 1. FORMULARIO */}
-        <section className="space-y-6">
+      {/* CONTENIDO PRINCIPAL: DOS COLUMNAS */}
+      <main className="mx-auto grid w-full max-w-7xl grid-cols-1 items-start gap-8 px-4 py-8 sm:px-6 lg:grid-cols-2 lg:gap-10 lg:px-8 lg:py-10">
+        {/* COLUMNA IZQUIERDA: NUEVA SOLICITUD */}
+        <section className="min-w-0 space-y-6">
           <header>
             <h1 className="font-[family-name:var(--font-display)] text-3xl text-[var(--ink)]">
               Nueva solicitud
             </h1>
+
             <p className="mt-1 text-[var(--muted)]">
               Describe el problema jurídico. El sistema propondrá una categoría
               automáticamente.
             </p>
           </header>
+
           <CaseForm />
         </section>
 
-        {/* 2. INICIO DE SESIÓN / REGISTRO */}
-        <section id="acceso" className="scroll-mt-6">
-          <div className="rounded-xl border border-[var(--ink)]/10 bg-[var(--paper)] p-5 sm:p-6">
+        {/* COLUMNA DERECHA: INICIAR SESIÓN / REGISTRO */}
+        <section id="acceso" className="min-w-0 scroll-mt-6 lg:pt-20">
+          <div className="w-full rounded-xl border border-[var(--ink)]/10 bg-[var(--paper)] p-5 shadow-sm sm:p-6">
             {pendingVerification ? (
               <div className="space-y-3">
                 <h2 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
                   Confirma tu correo
                 </h2>
+
                 <p className="text-sm text-[var(--muted)]">
                   Enviamos un enlace de verificación a {firebaseUser?.email}.
                   Ábrelo y luego presiona el botón. Si no lo ves, revisa la
                   carpeta de spam.
                 </p>
-                {authError && <p className="text-sm text-red-600">{authError}</p>}
+
+                {authError && (
+                  <p className="text-sm text-red-600">{authError}</p>
+                )}
+
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={onCheckVerified}
@@ -212,6 +238,7 @@ export default function HomePage() {
                   >
                     Ya verifiqué
                   </Button>
+
                   <Button
                     variant="outline"
                     onClick={() => resendVerification().catch(() => {})}
@@ -219,6 +246,7 @@ export default function HomePage() {
                   >
                     Reenviar correo
                   </Button>
+
                   <Button variant="ghost" onClick={logout} disabled={authBusy}>
                     Salir
                   </Button>
@@ -229,22 +257,24 @@ export default function HomePage() {
                 <h2 className="font-[family-name:var(--font-display)] text-2xl text-[var(--ink)]">
                   {tab === "login" ? "Iniciar sesión" : "Crear cuenta"}
                 </h2>
+
                 <p className="mt-1 text-sm text-[var(--muted)]">
                   {tab === "login"
                     ? "Entra con tu correo para consultar el estado de tus solicitudes."
                     : "Regístrate con el mismo correo que usaste en tu solicitud para ver el estado de tu caso."}
                 </p>
 
+                {/* CAMBIO ENTRE INICIO DE SESIÓN Y REGISTRO */}
                 <div className="mt-4 grid grid-cols-2 gap-1 rounded-lg bg-[var(--surface)] p-1">
                   {(["login", "register"] as const).map((t) => (
                     <button
                       key={t}
                       type="button"
                       onClick={() => changeTab(t)}
-                      className={`rounded-md py-2 text-sm font-medium ${
+                      className={`rounded-md py-2 text-sm font-medium transition-colors ${
                         tab === t
                           ? "bg-[var(--ink)] text-[var(--paper)]"
-                          : "text-[var(--muted)]"
+                          : "text-[var(--muted)] hover:text-[var(--ink)]"
                       }`}
                     >
                       {t === "login" ? "Entrar" : "Registrarse"}
@@ -252,27 +282,30 @@ export default function HomePage() {
                   ))}
                 </div>
 
+                {/* FORMULARIO DE AUTENTICACIÓN */}
                 <form onSubmit={onSubmit} className="mt-4">
-                  {/* fieldset disabled: bloquea campos y botón mientras procesa */}
                   <fieldset
                     disabled={authBusy}
                     className="m-0 min-w-0 space-y-4 border-0 p-0"
                   >
                     {tab === "register" && (
                       <div className="space-y-2">
-                        <Label htmlFor="reg-name">Nombre</Label>
+                        <Label htmlFor="reg-name">Nombre completo</Label>
+
                         <Input
                           id="reg-name"
                           required
                           autoComplete="name"
                           value={name}
                           onChange={(e) => setName(e.target.value)}
+                          placeholder="Tu nombre completo"
                         />
                       </div>
                     )}
 
                     <div className="space-y-2">
-                      <Label htmlFor="auth-email">Correo</Label>
+                      <Label htmlFor="auth-email">Correo electrónico</Label>
+
                       <Input
                         id="auth-email"
                         type="email"
@@ -285,8 +318,9 @@ export default function HomePage() {
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-2">
                         <Label htmlFor="auth-password">Contraseña</Label>
+
                         {tab === "login" && (
                           <button
                             type="button"
@@ -297,6 +331,7 @@ export default function HomePage() {
                           </button>
                         )}
                       </div>
+
                       <div className="relative">
                         <Input
                           id="auth-password"
@@ -304,13 +339,16 @@ export default function HomePage() {
                           required
                           minLength={6}
                           autoComplete={
-                            tab === "login" ? "current-password" : "new-password"
+                            tab === "login"
+                              ? "current-password"
+                              : "new-password"
                           }
                           placeholder="Mínimo 6 caracteres"
                           className="pr-10"
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
                         />
+
                         <button
                           type="button"
                           onClick={() => setShowPassword((v) => !v)}
@@ -329,6 +367,7 @@ export default function HomePage() {
                         </button>
                       </div>
 
+                      {/* INDICADOR DE SEGURIDAD DE LA CONTRASEÑA */}
                       {tab === "register" && password && (
                         <div className="space-y-1">
                           <div className="grid grid-cols-3 gap-1">
@@ -347,6 +386,7 @@ export default function HomePage() {
                               />
                             ))}
                           </div>
+
                           <p className="text-xs text-[var(--muted)]">
                             Seguridad: {strength.label}
                             {strength.level < 3 &&
@@ -356,9 +396,13 @@ export default function HomePage() {
                       )}
                     </div>
 
+                    {/* CONFIRMACIÓN DE CONTRASEÑA */}
                     {tab === "register" && (
                       <div className="space-y-2">
-                        <Label htmlFor="auth-confirm">Confirmar contraseña</Label>
+                        <Label htmlFor="auth-confirm">
+                          Confirmar contraseña
+                        </Label>
+
                         <div className="relative">
                           <Input
                             id="auth-confirm"
@@ -371,6 +415,7 @@ export default function HomePage() {
                             value={confirmPassword}
                             onChange={(e) => setConfirmPassword(e.target.value)}
                           />
+
                           <button
                             type="button"
                             onClick={() => setShowConfirm((v) => !v)}
@@ -388,6 +433,7 @@ export default function HomePage() {
                             )}
                           </button>
                         </div>
+
                         {confirmPassword && password !== confirmPassword && (
                           <p className="text-xs text-red-600">
                             Las contraseñas no coinciden.
@@ -396,10 +442,12 @@ export default function HomePage() {
                       </div>
                     )}
 
-                    <div aria-live="polite">
+                    {/* MENSAJES */}
+                    <div aria-live="polite" className="space-y-2">
                       {errorMessage && (
                         <p className="text-sm text-red-600">{errorMessage}</p>
                       )}
+
                       {resetSent && (
                         <p className="text-sm text-[var(--muted)]">
                           Si el correo está registrado, te enviamos un enlace
@@ -409,8 +457,10 @@ export default function HomePage() {
                       )}
                     </div>
 
+                    {/* BOTÓN PRINCIPAL */}
                     <Button
                       type="submit"
+                      disabled={authBusy}
                       className="w-full bg-[var(--ink)] text-[var(--paper)] hover:bg-[var(--teal)]"
                     >
                       {authBusy
@@ -420,6 +470,7 @@ export default function HomePage() {
                           : "Crear cuenta"}
                     </Button>
 
+                    {/* ACTIVACIÓN DE CUENTA AUTORIZADA */}
                     <button
                       type="button"
                       className="w-full text-sm text-[var(--muted)] underline-offset-4 hover:text-[var(--teal)] hover:underline"
